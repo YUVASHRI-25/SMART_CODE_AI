@@ -1,0 +1,6 @@
+{
+  "name": "Smart Code Debugger & AI Bug Fixing System",
+  "description": "AI-powered code debugging and automated bug fixing system using Qwen2.5 Coder and Gemini with Monaco Editor, diff inspection, and test validation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
