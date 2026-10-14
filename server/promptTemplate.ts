@@ -71,7 +71,9 @@ You MUST respond strictly with a valid JSON object matching this schema:
       "title": "Short title",
       "description": "Clear explanation of the error",
       "root_cause": "Detailed technical explanation of why this happens in this language/runtime",
-      "suggestion": "Concrete description of the fix"
+      "suggestion": "Concrete description of the fix",
+      "code_snippet": "Exact line of faulty code (e.g. 'for (let i = 0; i <= arr.length; i++)')",
+      "fixed_snippet": "Exact corrected replacement line (e.g. 'for (let i = 0; i < arr.length; i++)')"
     }
   ],
   "fixed_code": "Complete corrected source code without truncation",

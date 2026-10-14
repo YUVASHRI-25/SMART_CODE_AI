@@ -30,6 +30,8 @@ export interface CodeIssue {
   description: string;
   root_cause: string; // "Why this occurs"
   suggestion: string;
+  code_snippet?: string;
+  fixed_snippet?: string;
 }
 
 export interface TestCase {
@@ -75,6 +77,7 @@ export interface DebugRequest {
   fileName?: string;
   provider?: 'openrouter' | 'gemini';
   model?: string;
+  openRouterKey?: string;
   testCases?: TestCase[];
 }
 
@@ -107,6 +110,7 @@ export interface LanguageInfo {
 export interface AppSettings {
   aiProvider: 'gemini' | 'openrouter';
   openRouterModel: string;
+  openRouterKey?: string;
   hasOpenRouterKey: boolean;
   hasGeminiKey: boolean;
   autoValidateOnFix: boolean;

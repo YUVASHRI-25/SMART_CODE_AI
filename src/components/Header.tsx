@@ -2,14 +2,12 @@ import React, { useRef } from 'react';
 import { SupportedLanguage } from '../types/debugger';
 import { SAMPLE_CODES, SampleSnippet } from '../data/sampleCodes';
 import {
-  Play,
-  RotateCcw,
   Upload,
   Sparkles,
-  FileCode,
-  ShieldCheck,
-  AlertCircle,
+  RotateCcw,
   Loader2,
+  FileCode,
+  Code2,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -46,24 +44,22 @@ export const Header: React.FC<HeaderProps> = ({
     if (file) {
       onFileUpload(file);
     }
-    // reset input value so re-uploading same file triggers event
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 px-4 flex items-center justify-between gap-3 shrink-0">
-      {/* Left controls: Language & Sample */}
-      <div className="flex items-center gap-2.5">
-        {/* Language selector */}
+    <header className="bg-white border-b border-slate-200 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 select-none shadow-2xs">
+      {/* Left controls: Language & File Info */}
+      <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5">
-          <label htmlFor="language-select" className="text-xs font-semibold text-slate-700">Language:</label>
+          <label htmlFor="language-select" className="text-xs font-bold text-slate-700">Language:</label>
           <select
             id="language-select"
             value={language}
             onChange={(e) => onSelectLanguage(e.target.value as SupportedLanguage)}
-            className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-md text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-2xs"
           >
             <option value="python">Python (.py)</option>
             <option value="javascript">JavaScript (.js)</option>
@@ -78,21 +74,31 @@ export const Header: React.FC<HeaderProps> = ({
           </select>
         </div>
 
-        {/* Sample snippet picker */}
-        <div className="hidden md:flex items-center gap-1.5">
-          <span className="text-slate-300">|</span>
-          <label htmlFor="sample-bug-select" className="text-xs text-slate-500">Buggy Sample:</label>
+        {fileName ? (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-800 text-xs font-mono border border-blue-200">
+            <FileCode className="w-3.5 h-3.5 text-blue-600" />
+            <span className="truncate max-w-[180px] font-medium">{fileName}</span>
+          </div>
+        ) : (
+          <div className="hidden md:flex items-center gap-1 text-[11px] text-slate-400">
+            <span>No file uploaded yet • Type or paste code below</span>
+          </div>
+        )}
+
+        {/* Optional Demo loader for quick testing if needed */}
+        <div className="hidden lg:flex items-center gap-1.5 pl-2 border-l border-slate-200">
+          <label htmlFor="demo-select" className="sr-only">Load Demo Snippet</label>
           <select
-            id="sample-bug-select"
+            id="demo-select"
             onChange={(e) => {
               const sample = SAMPLE_CODES.find((s) => s.id === e.target.value);
               if (sample) onSelectSample(sample);
             }}
             defaultValue=""
-            className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-blue-500 cursor-pointer max-w-[210px] truncate"
+            className="px-2 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded text-[11px] text-slate-600 focus:outline-hidden cursor-pointer"
           >
             <option value="" disabled>
-              Select Buggy Code Sample...
+              Load Demo Snippet (Optional)...
             </option>
             {SAMPLE_CODES.map((s) => (
               <option key={s.id} value={s.id}>
@@ -101,44 +107,37 @@ export const Header: React.FC<HeaderProps> = ({
             ))}
           </select>
         </div>
-
-        {fileName && (
-          <div className="hidden lg:flex items-center gap-1 px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-mono">
-            <FileCode className="w-3.5 h-3.5 text-blue-600" />
-            <span className="truncate max-w-[140px]">{fileName}</span>
-          </div>
-        )}
       </div>
 
       {/* Right controls: Upload, Reset, Analyze */}
       <div className="flex items-center gap-2">
-        {/* Upload file hidden input & button */}
+        {/* Accept any source code file */}
         <input
           ref={fileInputRef}
           type="file"
           onChange={handleFileChange}
-          accept=".py,.js,.jsx,.ts,.tsx,.java,.cpp,.c,.h,.hpp,.go,.rs,.rb,.php,.txt"
+          accept="*/*"
           className="hidden"
         />
 
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-md text-xs font-medium transition-colors shadow-2xs"
-          title="Upload source code file (.py, .js, .ts, .cpp, .java, etc. max 500KB)"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-xs font-medium transition-colors shadow-2xs active:scale-[0.98]"
+          title="Upload any source code file from your computer"
         >
           <Upload className="w-3.5 h-3.5 text-slate-500" />
-          <span className="hidden sm:inline">Upload File</span>
+          <span>Upload File</span>
         </button>
 
         <button
           type="button"
           onClick={onReset}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-600 rounded-md text-xs font-medium transition-colors shadow-2xs"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-600 rounded-lg text-xs font-medium transition-colors shadow-2xs active:scale-[0.98]"
           title="Reset workspace and clear editor"
         >
           <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-          <span className="hidden sm:inline">Reset</span>
+          <span>Reset</span>
         </button>
 
         {/* Primary Analyze Code Action */}
@@ -146,14 +145,14 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           onClick={onAnalyzeCode}
           disabled={isAnalyzing || !hasCode}
-          className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm active:scale-[0.98] ${
+          className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-[0.98] ${
             isAnalyzing
-              ? 'bg-blue-500 text-white cursor-wait'
+              ? 'bg-blue-600 text-white cursor-wait'
               : !hasCode
               ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
+              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/25 hover:shadow-blue-500/35'
           }`}
-          title={!hasCode ? 'Enter or paste code to analyze' : 'Run AI bug detection and remediation'}
+          title={!hasCode ? 'Paste or upload code to analyze' : 'Run AI bug detection and remediation'}
         >
           {isAnalyzing ? (
             <>

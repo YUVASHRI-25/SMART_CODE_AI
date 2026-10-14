@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
-import { MonacoCodeEditor } from './components/MonacoCodeEditor';
+import { MonacoCodeEditor, MonacoCodeEditorHandle } from './components/MonacoCodeEditor';
 import { MonacoDiffViewer } from './components/MonacoDiffViewer';
 import { BugAnalysisPanel } from './components/BugAnalysisPanel';
 import { ValidationPanel } from './components/ValidationPanel';
@@ -35,16 +35,20 @@ import {
   Bug,
   ShieldCheck,
   Code2,
-  ExternalLink,
+  Columns,
+  Maximize2,
+  Minimize2,
+  Play,
+  RotateCcw,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 
 export default function App() {
-  // Default code initialized with the first sample for immediate demonstration
-  const defaultSample = SAMPLE_CODES[0];
-  const [code, setCode] = useState<string>(defaultSample.code);
-  const [language, setLanguage] = useState<SupportedLanguage>(defaultSample.language);
-  const [fileName, setFileName] = useState<string | undefined>(defaultSample.fileName);
-  const [testCases, setTestCases] = useState<TestCase[]>(defaultSample.suggestedTestCases);
+  const [code, setCode] = useState<string>('');
+  const [language, setLanguage] = useState<SupportedLanguage>('python');
+  const [fileName, setFileName] = useState<string | undefined>(undefined);
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
 
   // AI & Debugging State
   const [debugResponse, setDebugResponse] = useState<DebugResponse | null>(null);
@@ -52,10 +56,17 @@ export default function App() {
   const [originalCode, setOriginalCode] = useState<string>('');
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
 
-  // UI Navigation & Views
+  // Layout View Modes:
+  // 'split' = Editor on Left, Inspector on Right (Default desktop)
+  // 'diff' = Full-width Diff Viewer
+  // 'editor' = Full-width Editor
+  // 'validation' = Full-width Test Suite
   const [currentTab, setCurrentTab] = useState<'workspace' | 'diff' | 'analysis' | 'validation'>(
     'workspace'
   );
+  const [inspectorTab, setInspectorTab] = useState<'analysis' | 'diff' | 'validation'>('analysis');
+
+  // Loading States
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingStage, setAnalyzingStage] = useState('');
   const [isValidating, setIsValidating] = useState(false);
@@ -65,11 +76,14 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLanguagesOpen, setIsLanguagesOpen] = useState(false);
 
-  // Data & History
+  // History & Health
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([]);
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
 
-  // App Settings with LocalStorage persistence
+  // Editor Ref for line jumping
+  const editorRef = useRef<MonacoCodeEditorHandle>(null);
+
+  // Settings
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('smart_debugger_settings');
@@ -92,16 +106,22 @@ export default function App() {
   const [notification, setNotification] = useState<{
     type: 'success' | 'error' | 'info';
     message: string;
+    actionLabel?: string;
+    onAction?: () => void;
   } | null>(null);
 
-  const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
-    setNotification({ type, message });
+  const showNotification = (
+    type: 'success' | 'error' | 'info',
+    message: string,
+    actionLabel?: string,
+    onAction?: () => void
+  ) => {
+    setNotification({ type, message, actionLabel, onAction });
     setTimeout(() => {
       setNotification((curr) => (curr?.message === message ? null : curr));
-    }, 4000);
+    }, 5000);
   };
 
-  // Load initial backend health and history
   useEffect(() => {
     const loadInitialData = async () => {
       try {
@@ -127,18 +147,16 @@ export default function App() {
     loadInitialData();
   }, []);
 
-  // Save settings change
   const handleSaveSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
     try {
       localStorage.setItem('smart_debugger_settings', JSON.stringify(newSettings));
-      showNotification('success', 'Settings updated successfully.');
+      showNotification('success', 'Settings updated.');
     } catch (e) {
       console.warn('Failed to save settings:', e);
     }
   };
 
-  // Sample Loader
   const handleSelectSample = (sample: SampleSnippet) => {
     setCode(sample.code);
     setLanguage(sample.language);
@@ -149,28 +167,30 @@ export default function App() {
     setOriginalCode('');
     setValidationResult(null);
     setCurrentTab('workspace');
-    showNotification('info', `Loaded sample: ${sample.title}`);
+    setInspectorTab('analysis');
+    showNotification('info', `Loaded ${sample.title}`);
   };
 
-  // File Upload Handler with Validation
   const handleFileUpload = (file: File) => {
-    // Check file size (500KB limit)
     const MAX_SIZE = 500 * 1024;
     if (file.size > MAX_SIZE) {
-      showNotification('error', `File too large (${(file.size / 1024).toFixed(1)}KB). Limit is 500KB.`);
+      showNotification('error', `File exceeds 500KB limit (${(file.size / 1024).toFixed(1)}KB).`);
       return;
     }
 
-    // Infer language from extension
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     const extToLang: Record<string, SupportedLanguage> = {
       '.py': 'python',
+      '.py3': 'python',
       '.js': 'javascript',
       '.jsx': 'javascript',
+      '.mjs': 'javascript',
+      '.cjs': 'javascript',
       '.ts': 'typescript',
       '.tsx': 'typescript',
       '.java': 'java',
       '.cpp': 'cpp',
+      '.cxx': 'cpp',
       '.cc': 'cpp',
       '.c': 'c',
       '.h': 'c',
@@ -181,14 +201,7 @@ export default function App() {
       '.php': 'php',
     };
 
-    const detectedLang = extToLang[ext];
-    if (!detectedLang) {
-      showNotification(
-        'error',
-        `Unsupported file type '${ext}'. Please upload source files (.py, .js, .ts, .cpp, .java, etc.).`
-      );
-      return;
-    }
+    const detectedLang = extToLang[ext] || language;
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -201,16 +214,18 @@ export default function App() {
         setFixedCode('');
         setOriginalCode('');
         setValidationResult(null);
-        showNotification('success', `Uploaded ${file.name} successfully (${detectedLang}).`);
+        showNotification(
+          'success',
+          `Loaded ${file.name} successfully (${detectedLang.toUpperCase()}). Ready to analyze.`
+        );
       }
     };
     reader.onerror = () => {
-      showNotification('error', 'Failed to read uploaded file.');
+      showNotification('error', 'Could not read file.');
     };
     reader.readAsText(file);
   };
 
-  // Workspace Reset
   const handleReset = () => {
     setCode('');
     setFileName(undefined);
@@ -219,32 +234,30 @@ export default function App() {
     setOriginalCode('');
     setValidationResult(null);
     setTestCases([]);
-    showNotification('info', 'Workspace reset. Editor cleared.');
+    showNotification('info', 'Workspace cleared.');
   };
 
-  // Core Analyze Code Handler
   const handleAnalyzeCode = async () => {
     if (!code || code.trim().length === 0) {
-      showNotification('error', 'Please enter or paste source code before starting analysis.');
+      showNotification('error', 'Please enter or paste some code to analyze.');
       return;
     }
 
     setIsAnalyzing(true);
-    setAnalyzingStage('Initializing AI analyzer...');
+    setAnalyzingStage('Starting analysis...');
 
     try {
-      // Progress simulation stages
       const stageTimer1 = setTimeout(() => {
-        setAnalyzingStage('Localizing syntax & logical anomalies...');
-      }, 700);
+        setAnalyzingStage('Checking syntax & grammar...');
+      }, 500);
 
       const stageTimer2 = setTimeout(() => {
-        setAnalyzingStage('Synthesizing surgical remediation & diff...');
-      }, 1800);
+        setAnalyzingStage('Localizing bugs & root causes...');
+      }, 1200);
 
       const stageTimer3 = setTimeout(() => {
-        setAnalyzingStage('Executing test cases & AST checks...');
-      }, 3000);
+        setAnalyzingStage('Generating surgical fix...');
+      }, 2200);
 
       const response = await submitDebugCode({
         code,
@@ -252,6 +265,7 @@ export default function App() {
         fileName,
         provider: settings.aiProvider,
         model: settings.openRouterModel,
+        openRouterKey: settings.openRouterKey,
         testCases,
       });
 
@@ -264,21 +278,22 @@ export default function App() {
       setOriginalCode(response.original_code);
       setValidationResult(response.validation);
 
-      // Refresh history list
       fetchHistory().then(setHistorySessions).catch(console.warn);
 
       showNotification(
         'success',
-        `Analysis complete! Identified ${response.issues.length} ${
+        `Analysis complete! Found ${response.issues.length} ${
           response.issues.length === 1 ? 'issue' : 'issues'
-        }.`
+        }.`,
+        'View Diff',
+        () => {
+          setCurrentTab('diff');
+        }
       );
 
-      // Transition to Diff or Analysis view to inspect results
+      // Auto switch inspector tab to analysis or diff
       if (response.issues.length > 0) {
-        setCurrentTab('diff');
-      } else {
-        setCurrentTab('analysis');
+        setInspectorTab('analysis');
       }
     } catch (err: any) {
       console.error('Debug error:', err);
@@ -289,7 +304,6 @@ export default function App() {
     }
   };
 
-  // Test Case Validation Runner
   const handleRunValidation = async () => {
     const targetCode = fixedCode || code;
     if (!targetCode) {
@@ -304,8 +318,8 @@ export default function App() {
       showNotification(
         res.status === 'passed' ? 'success' : 'error',
         res.status === 'passed'
-          ? 'Validation test suite passed cleanly!'
-          : `Validation: ${res.details}`
+          ? 'All validation checks passed!'
+          : `Validation failed: ${res.details}`
       );
     } catch (err: any) {
       showNotification('error', err.message || 'Validation request failed.');
@@ -314,22 +328,25 @@ export default function App() {
     }
   };
 
-  // Apply Fixed Code into main editor
   const handleApplyFix = () => {
     if (!fixedCode) return;
+    const prevCode = code;
     setCode(fixedCode);
-    showNotification('success', 'Corrected fix applied to the main editor.');
+    showNotification(
+      'success',
+      'Corrected code applied to main editor!',
+      'Undo',
+      () => setCode(prevCode)
+    );
     setCurrentTab('workspace');
   };
 
-  // Restore Original Code
   const handleRestoreOriginal = () => {
     if (!originalCode) return;
     setCode(originalCode);
     showNotification('info', 'Restored original code.');
   };
 
-  // Restore previous session from history
   const handleSelectHistorySession = (session: HistorySession) => {
     setCode(session.originalCode);
     setLanguage(session.language);
@@ -338,7 +355,7 @@ export default function App() {
     setFixedCode(session.fixedCode);
     setValidationResult({
       status: session.validationStatus,
-      details: 'Restored from previous session record.',
+      details: 'Restored from previous history session.',
       syntaxValid: true,
       testCasesRun: 0,
       testCasesPassed: 0,
@@ -363,24 +380,22 @@ export default function App() {
         testResults: [],
       },
       model_used: session.modelUsed,
-      provider_used: (session.providerUsed as any) || 'openrouter',
+      provider_used: (session.providerUsed as any) || 'gemini',
     });
     setCurrentTab('diff');
     showNotification('info', `Loaded session from ${new Date(session.timestamp).toLocaleTimeString()}`);
   };
 
-  // Delete history item
   const handleDeleteHistorySession = async (id: string) => {
     try {
       await deleteHistoryItem(id);
       setHistorySessions((prev) => prev.filter((s) => s.id !== id));
-      showNotification('info', 'Session deleted from history.');
+      showNotification('info', 'Session deleted.');
     } catch (err: any) {
       showNotification('error', err.message || 'Failed to delete session.');
     }
   };
 
-  // Clear all history
   const handleClearAllHistory = async () => {
     try {
       await clearAllHistory();
@@ -391,12 +406,21 @@ export default function App() {
     }
   };
 
+  const handleJumpToLine = (lineNumber: number) => {
+    if (currentTab !== 'workspace') {
+      setCurrentTab('workspace');
+    }
+    setTimeout(() => {
+      editorRef.current?.revealLine(lineNumber);
+    }, 50);
+  };
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100 font-sans text-slate-800 antialiased">
       {/* Toast Notification */}
       {notification && (
         <div
-          className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-lg shadow-lg text-xs font-medium border transition-all animate-in fade-in slide-in-from-top-2 duration-200 ${
+          className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium border transition-all animate-in fade-in slide-in-from-top-2 duration-150 ${
             notification.type === 'success'
               ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
               : notification.type === 'error'
@@ -407,11 +431,22 @@ export default function App() {
           {notification.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
           {notification.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
           {notification.type === 'info' && <Info className="w-4 h-4 text-blue-600 shrink-0" />}
-          <span>{notification.message}</span>
+          <span className="leading-snug">{notification.message}</span>
+
+          {notification.actionLabel && notification.onAction && (
+            <button
+              type="button"
+              onClick={notification.onAction}
+              className="ml-1 px-2 py-0.5 rounded bg-white font-bold text-blue-700 border border-blue-200 hover:bg-blue-50 shadow-2xs"
+            >
+              {notification.actionLabel}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setNotification(null)}
-            className="ml-2 text-slate-400 hover:text-slate-600"
+            className="ml-1 text-slate-400 hover:text-slate-600"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -430,9 +465,9 @@ export default function App() {
         activeProvider={healthStatus?.activeProvider || settings.aiProvider}
       />
 
-      {/* Main Workspace Area */}
+      {/* Main Container */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Workspace Toolbar */}
+        {/* Workspace Toolbar & Samples */}
         <Header
           language={language}
           onSelectLanguage={setLanguage}
@@ -447,28 +482,28 @@ export default function App() {
           activeProvider={healthStatus?.activeProvider || settings.aiProvider}
         />
 
-        {/* Tab Switcher & Status Bar */}
+        {/* View Layout Switcher Bar */}
         <div className="h-11 bg-white border-b border-slate-200 px-4 flex items-center justify-between gap-3 text-xs shrink-0 select-none">
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setCurrentTab('workspace')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors ${
                 currentTab === 'workspace'
-                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              <Code2 className="w-3.5 h-3.5 text-blue-600" />
-              <span>Editor</span>
+              <Columns className="w-3.5 h-3.5 text-blue-600" />
+              <span>Workspace (Split View)</span>
             </button>
 
             <button
               type="button"
               onClick={() => setCurrentTab('diff')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors ${
                 currentTab === 'diff'
-                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -482,90 +517,180 @@ export default function App() {
             <button
               type="button"
               onClick={() => setCurrentTab('analysis')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors ${
                 currentTab === 'analysis'
-                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
               <Bug className="w-3.5 h-3.5 text-amber-600" />
-              <span>Bug Analysis</span>
-              {debugResponse && debugResponse.issues.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                  {debugResponse.issues.length}
-                </span>
-              )}
+              <span>Diagnostics ({debugResponse ? debugResponse.issues.length : 0})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setCurrentTab('validation')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors ${
                 currentTab === 'validation'
-                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Validation & Tests</span>
-              {validationResult?.status === 'passed' && (
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              )}
+              <span>Tests & Verification</span>
             </button>
           </div>
 
-          {/* Quick Metrics Tag */}
-          <div className="hidden sm:flex items-center gap-3 text-slate-500 text-[11px]">
-            {debugResponse && (
-              <span className="text-slate-600">
-                Fix Engine:{' '}
-                <span className="font-mono font-medium text-slate-800">
-                  {debugResponse.model_used}
-                </span>
+          {/* Quick Status Tag on Right */}
+          <div className="hidden sm:flex items-center gap-2 text-slate-500 text-[11px]">
+            {validationResult?.status === 'passed' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                Verified
               </span>
             )}
-            {validationResult && (
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${
-                  validationResult.status === 'passed'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                }`}
+            {fixedCode && (
+              <button
+                type="button"
+                onClick={handleApplyFix}
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-bold text-[11px] shadow-2xs transition-colors flex items-center gap-1"
+                title="Apply fixed code into active editor"
               >
-                {validationResult.status === 'passed' ? 'Verified' : validationResult.status}
-              </span>
+                <span>Apply Fix</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
             )}
           </div>
         </div>
 
-        {/* Workspace Body */}
+        {/* Workspace Main Area */}
         <main className="flex-1 p-3.5 overflow-hidden flex flex-col">
+          {/* Split Mode (Workspace) */}
           {currentTab === 'workspace' && (
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3.5 h-full overflow-hidden">
-              {/* Left: Code Editor (7 cols on lg) */}
+              {/* Left Column: Monaco Editor (7 cols) */}
               <div className="lg:col-span-7 h-full flex flex-col min-h-0">
                 <MonacoCodeEditor
+                  ref={editorRef}
                   code={code}
                   onChange={setCode}
                   language={language}
                   issues={debugResponse?.issues}
                   fontSize={settings.editorFontSize}
                   onClear={() => setCode('')}
+                  onFileDrop={handleFileUpload}
+                  fileName={fileName}
                 />
               </div>
 
-              {/* Right: Companion Diagnostics Panel (5 cols on lg) */}
-              <div className="lg:col-span-5 h-full flex flex-col min-h-0 overflow-hidden">
-                <BugAnalysisPanel
-                  debugResponse={debugResponse}
-                  onSelectIssueLine={(line) => {
-                    // line jump is handled inside monaco
-                  }}
-                />
+              {/* Right Column: Interactive Companion Inspector (5 cols) */}
+              <div className="lg:col-span-5 h-full flex flex-col min-h-0 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                {/* Inspector Mini-tabs */}
+                <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200 select-none text-xs">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setInspectorTab('analysis')}
+                      className={`px-2.5 py-1 rounded-md font-bold text-xs transition-colors ${
+                        inspectorTab === 'analysis'
+                          ? 'bg-white text-blue-700 shadow-2xs border border-slate-200'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Bugs & Root Cause ({debugResponse?.issues.length || 0})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInspectorTab('diff')}
+                      className={`px-2.5 py-1 rounded-md font-bold text-xs transition-colors ${
+                        inspectorTab === 'diff'
+                          ? 'bg-white text-blue-700 shadow-2xs border border-slate-200'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Mini Diff
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInspectorTab('validation')}
+                      className={`px-2.5 py-1 rounded-md font-bold text-xs transition-colors ${
+                        inspectorTab === 'validation'
+                          ? 'bg-white text-blue-700 shadow-2xs border border-slate-200'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Tests ({testCases.length})
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentTab(inspectorTab === 'diff' ? 'diff' : inspectorTab)}
+                    className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200"
+                    title="Maximize panel"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Inspector Content */}
+                <div className="flex-1 p-3 overflow-y-auto">
+                  {inspectorTab === 'analysis' && (
+                    <BugAnalysisPanel
+                      debugResponse={debugResponse}
+                      onSelectIssueLine={handleJumpToLine}
+                      onViewDiff={() => setCurrentTab('diff')}
+                    />
+                  )}
+
+                  {inspectorTab === 'diff' && (
+                    <div className="h-full flex flex-col">
+                      {fixedCode ? (
+                        <MonacoDiffViewer
+                          originalCode={originalCode || code}
+                          fixedCode={fixedCode}
+                          language={language}
+                          fileName={fileName}
+                          onApplyFix={handleApplyFix}
+                          onRestoreOriginal={handleRestoreOriginal}
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full p-6 text-center text-slate-500">
+                          <Layers className="w-10 h-10 text-slate-300 mb-2" />
+                          <h4 className="text-xs font-bold text-slate-700 mb-1">
+                            No Diff Generated Yet
+                          </h4>
+                          <p className="text-[11px] text-slate-500 mb-3 max-w-xs">
+                            Run "Analyze & Fix Code" to generate an automated correction and review
+                            line-by-line differences.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleAnalyzeCode}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
+                          >
+                            Analyze Now
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {inspectorTab === 'validation' && (
+                    <ValidationPanel
+                      validationResult={validationResult}
+                      testCases={testCases}
+                      onUpdateTestCases={setTestCases}
+                      onRunValidation={handleRunValidation}
+                      isValidating={isValidating}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           )}
 
+          {/* Full-width Diff Mode */}
           {currentTab === 'diff' && (
             <div className="flex-1 h-full min-h-0">
               {fixedCode ? (
@@ -578,19 +703,19 @@ export default function App() {
                   onRestoreOriginal={handleRestoreOriginal}
                 />
               ) : (
-                <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-white rounded-lg border border-slate-200">
+                <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-white rounded-xl border border-slate-200">
                   <Layers className="w-12 h-12 text-slate-300 mb-3" />
-                  <h3 className="text-base font-semibold text-slate-700 mb-1">
-                    No Comparison Available
+                  <h3 className="text-base font-bold text-slate-800 mb-1">
+                    No Comparison Available Yet
                   </h3>
                   <p className="text-xs text-slate-500 max-w-sm mb-4">
-                    Run "Analyze & Fix Code" to generate an automated correction and view side-by-side
-                    diff highlights.
+                    Submit code or pick a sample scenario, then click "Analyze & Fix Code" to view
+                    side-by-side Monaco diff highlights.
                   </p>
                   <button
                     type="button"
                     onClick={handleAnalyzeCode}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
                   >
                     Analyze Code Now
                   </button>
@@ -599,12 +724,18 @@ export default function App() {
             </div>
           )}
 
+          {/* Full-width Analysis Mode */}
           {currentTab === 'analysis' && (
             <div className="flex-1 h-full min-h-0 max-w-4xl mx-auto w-full">
-              <BugAnalysisPanel debugResponse={debugResponse} />
+              <BugAnalysisPanel
+                debugResponse={debugResponse}
+                onSelectIssueLine={handleJumpToLine}
+                onViewDiff={() => setCurrentTab('diff')}
+              />
             </div>
           )}
 
+          {/* Full-width Validation Mode */}
           {currentTab === 'validation' && (
             <div className="flex-1 h-full min-h-0 max-w-4xl mx-auto w-full">
               <ValidationPanel

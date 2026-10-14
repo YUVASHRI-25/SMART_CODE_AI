@@ -138,7 +138,12 @@ app.post('/api/debug', async (req: Request, res: Response) => {
     let providerUsed: 'openrouter' | 'gemini' | 'simulated' = 'gemini';
     let modelUsed = 'gemini-3.8-flash';
 
-    const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY !== 'your_api_key_here');
+    const openRouterApiKey =
+      (req.body as any).openRouterKey ||
+      (req.headers['x-openrouter-key'] as string) ||
+      process.env.OPENROUTER_API_KEY;
+
+    const hasOpenRouterKey = Boolean(openRouterApiKey && openRouterApiKey !== 'your_api_key_here');
     const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY');
 
     const preferOpenRouter = requestedProvider === 'openrouter' || (!requestedProvider && hasOpenRouterKey);
@@ -156,7 +161,7 @@ app.post('/api/debug', async (req: Request, res: Response) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            'Authorization': `Bearer ${openRouterApiKey}`,
             'HTTP-Referer': process.env.APP_URL || 'http://localhost:3000',
             'X-Title': 'Smart Code Debugger & Bug Fixing System',
           },
@@ -191,10 +196,10 @@ app.post('/api/debug', async (req: Request, res: Response) => {
 
     // Call Gemini if OpenRouter was not used or failed
     if (!rawAiResponse && geminiClient && hasGeminiKey) {
-      const geminiCandidateModels = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
+      const geminiCandidateModels = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
       let lastGeminiErr: any = null;
 
-      const callGeminiWithTimeout = async (modelName: string, timeoutMs = 5000) => {
+      const callGeminiWithTimeout = async (modelName: string, timeoutMs = 25000) => {
         return Promise.race([
           geminiClient!.models.generateContent({
             model: modelName,
@@ -213,8 +218,8 @@ app.post('/api/debug', async (req: Request, res: Response) => {
 
       for (const modelCandidate of geminiCandidateModels) {
         try {
-          console.log(`[AI Debug] Attempting Google Gemini with model: ${modelCandidate}...`);
-          const response = await callGeminiWithTimeout(modelCandidate, 5000);
+          console.log(`[AI Debug] Querying Gemini model: ${modelCandidate}...`);
+          const response = await callGeminiWithTimeout(modelCandidate, 25000);
 
           if (response.text && response.text.trim().length > 0) {
             rawAiResponse = response.text;
@@ -224,53 +229,21 @@ app.post('/api/debug', async (req: Request, res: Response) => {
           }
         } catch (geminiErr: any) {
           lastGeminiErr = geminiErr;
-          console.warn(`[AI Debug] Gemini candidate ${modelCandidate} failed (${geminiErr.message}), trying next fallback...`);
+          console.warn(`[AI Debug] Gemini candidate ${modelCandidate} failed: ${geminiErr.message}`);
         }
       }
 
       if (!rawAiResponse && lastGeminiErr) {
-        console.error('[AI Debug] All Gemini model candidates failed:', lastGeminiErr);
-        // If it was a temporary 503 or load error, generate a high-quality static diagnostic response
-        console.log('[AI Debug] Synthesizing static diagnostic fallback for user...');
-        const staticSyntax = validateSyntax(code, language);
-        rawAiResponse = JSON.stringify({
-          summary: `Static analysis completed (${staticSyntax.valid ? 'Syntax valid; AI cloud providers temporarily busy' : 'Syntax defect detected'}).`,
-          issues: staticSyntax.valid
-            ? [
-                {
-                  id: 'issue-static-1',
-                  type: 'edge_case',
-                  severity: 'medium',
-                  line: 1,
-                  title: 'Cloud AI High Demand Fallback',
-                  description: 'The remote AI model experienced temporary high traffic. Static analysis verified that the program structure is well-formed.',
-                  root_cause: 'Provider rate limits or upstream capacity spikes.',
-                  suggestion: 'Retry the analysis in a few seconds or configure an OpenRouter API key in settings.',
-                },
-              ]
-            : [
-                {
-                  id: 'issue-syntax-1',
-                  type: 'syntax',
-                  severity: 'critical',
-                  line: staticSyntax.line || 1,
-                  title: 'Syntax Anomaly Detected',
-                  description: staticSyntax.error || 'Syntax verification failed.',
-                  root_cause: 'Code violates language structural or bracket balance rules.',
-                  suggestion: 'Correct syntax formatting and balance brackets.',
-                },
-              ],
-          fixed_code: code,
-          changes: ['Verified structural bracket and token balance via static AST analyzer.'],
-          assumptions: ['Static fallback engaged due to upstream cloud AI model busy state.'],
-          uncertainties: ['Deep logical invariants require cloud AI re-run when capacity normalizes.'],
-        });
-        providerUsed = 'simulated';
-        modelUsed = 'static-ast-engine';
+        console.error('[AI Debug] Gemini call failed:', lastGeminiErr);
+        // Clean error message if 503
+        if (lastGeminiErr.message?.includes('503') || lastGeminiErr.message?.includes('high demand')) {
+          throw new Error('AI Model is temporarily experiencing high traffic. Please click Analyze again in a few seconds.');
+        }
+        throw new Error(lastGeminiErr.message || 'AI model service temporarily unavailable');
       }
     }
 
-    // If still no response because no keys are present, return a helpful error
+    // If still no response, return a helpful error
     if (!rawAiResponse) {
       return res.status(503).json({
         error: 'AI Provider Unavailable',
@@ -292,18 +265,27 @@ app.post('/api/debug', async (req: Request, res: Response) => {
       });
     }
 
+    const codeLines = code.split('\n');
+
     // Sanitize and format issues
-    const formattedIssues = (parsed.issues || []).map((issue: any, idx: number) => ({
-      id: issue.id || `issue-${idx + 1}`,
-      type: issue.type || 'logical',
-      severity: issue.severity || 'medium',
-      line: typeof issue.line === 'number' ? issue.line : undefined,
-      column: typeof issue.column === 'number' ? issue.column : undefined,
-      title: issue.title || `Detected ${issue.type || 'code'} issue`,
-      description: issue.description || 'No description provided.',
-      root_cause: issue.root_cause || issue.rootCause || 'Root cause could not be determined with absolute certainty.',
-      suggestion: issue.suggestion || 'Review code logic against language specifications.',
-    }));
+    const formattedIssues = (parsed.issues || []).map((issue: any, idx: number) => {
+      const lineNum = typeof issue.line === 'number' ? issue.line : undefined;
+      const extractedLine = lineNum && lineNum <= codeLines.length ? codeLines[lineNum - 1]?.trim() : undefined;
+
+      return {
+        id: issue.id || `issue-${idx + 1}`,
+        type: issue.type || 'logical',
+        severity: issue.severity || 'medium',
+        line: lineNum,
+        column: typeof issue.column === 'number' ? issue.column : undefined,
+        title: issue.title || `Detected ${issue.type || 'code'} issue`,
+        description: issue.description || 'No description provided.',
+        root_cause: issue.root_cause || issue.rootCause || 'Root cause could not be determined with absolute certainty.',
+        suggestion: issue.suggestion || 'Review code logic against language specifications.',
+        code_snippet: issue.code_snippet || extractedLine,
+        fixed_snippet: issue.fixed_snippet || undefined,
+      };
+    });
 
     const fixedCode = parsed.fixed_code || parsed.fixedCode || code;
 

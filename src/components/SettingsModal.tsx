@@ -106,6 +106,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
+          {/* OpenRouter API Key */}
+          {formData.aiProvider === 'openrouter' && (
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                OpenRouter API Key (Optional Override)
+              </label>
+              <input
+                type="password"
+                value={formData.openRouterKey || ''}
+                onChange={(e) => setFormData({ ...formData, openRouterKey: e.target.value })}
+                placeholder="sk-or-v1-..."
+                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded font-mono text-xs focus:ring-1 focus:ring-blue-500"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Provide your personal OpenRouter key or configure it in server environment.
+              </p>
+            </div>
+          )}
+
           {/* Model ID */}
           <div>
             <label className="block font-semibold text-slate-700 mb-1">
