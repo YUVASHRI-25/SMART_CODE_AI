@@ -8,6 +8,9 @@ import { ValidationPanel } from './components/ValidationPanel';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { SettingsModal } from './components/SettingsModal';
 import { SupportedLanguagesModal } from './components/SupportedLanguagesModal';
+import { HomePage } from './components/HomePage';
+import { AuthModal } from './components/AuthModal';
+import { User } from './types/auth';
 import {
   SupportedLanguage,
   TestCase,
@@ -70,6 +73,18 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingStage, setAnalyzingStage] = useState('');
   const [isValidating, setIsValidating] = useState(false);
+
+  // Navigation View: 'home' (Landing Page with Sign In) vs 'workspace' (Code Editor & Diagnostics)
+  const [currentView, setCurrentView] = useState<'home' | 'workspace'>('home');
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('smart_debugger_user');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
 
   // Modals & Drawers
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -146,6 +161,24 @@ export default function App() {
 
     loadInitialData();
   }, []);
+
+  const handleOpenAuth = (mode: 'signin' | 'signup' = 'signin') => {
+    setAuthMode(mode);
+    setIsAuthModalOpen(true);
+  };
+
+  const handleLoginSuccess = (authenticatedUser: User) => {
+    setUser(authenticatedUser);
+    showNotification('success', `Welcome back, ${authenticatedUser.name}!`);
+  };
+
+  const handleSignOut = () => {
+    try {
+      localStorage.removeItem('smart_debugger_user');
+    } catch {}
+    setUser(null);
+    showNotification('info', 'Signed out successfully.');
+  };
 
   const handleSaveSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
@@ -453,20 +486,35 @@ export default function App() {
         </div>
       )}
 
-      {/* Navigation Sidebar */}
-      <Sidebar
-        currentTab={currentTab}
-        onSelectTab={setCurrentTab}
-        onNewSession={handleReset}
-        onOpenHistory={() => setIsHistoryOpen(true)}
-        onOpenLanguages={() => setIsLanguagesOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        historyCount={historySessions.length}
-        activeProvider={healthStatus?.activeProvider || settings.aiProvider}
-      />
+      {/* Main View: Home Page or Debugger Workspace */}
+      {currentView === 'home' ? (
+        <HomePage
+          user={user}
+          onOpenWorkspace={() => setCurrentView('workspace')}
+          onOpenAuth={handleOpenAuth}
+          onSignOut={handleSignOut}
+          onOpenLanguages={() => setIsLanguagesOpen(true)}
+        />
+      ) : (
+        <>
+          {/* Navigation Sidebar */}
+          <Sidebar
+            currentTab={currentTab}
+            onSelectTab={setCurrentTab}
+            onNewSession={handleReset}
+            onOpenHistory={() => setIsHistoryOpen(true)}
+            onOpenLanguages={() => setIsLanguagesOpen(true)}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onGoHome={() => setCurrentView('home')}
+            user={user}
+            onOpenAuth={handleOpenAuth}
+            onSignOut={handleSignOut}
+            historyCount={historySessions.length}
+            activeProvider={healthStatus?.activeProvider || settings.aiProvider}
+          />
 
-      {/* Main Container */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Main Container */}
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Workspace Toolbar & Samples */}
         <Header
           language={language}
@@ -749,8 +797,17 @@ export default function App() {
           )}
         </main>
       </div>
+    </>
+  )}
 
       {/* Drawers & Modals */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
+        initialMode={authMode}
+      />
+
       <HistoryDrawer
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
