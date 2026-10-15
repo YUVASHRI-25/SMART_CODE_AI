@@ -78,6 +78,7 @@ export interface DebugRequest {
   provider?: 'openrouter' | 'gemini';
   model?: string;
   openRouterKey?: string;
+  geminiKey?: string;
   testCases?: TestCase[];
 }
 
@@ -102,7 +103,7 @@ export interface LanguageInfo {
   name: string;
   extension: string;
   monacoLanguage: string;
-  icon: string;
+  icon?: string;
   version: string;
   syntaxValidatorAvailable: boolean;
 }
@@ -111,6 +112,7 @@ export interface AppSettings {
   aiProvider: 'gemini' | 'openrouter';
   openRouterModel: string;
   openRouterKey?: string;
+  geminiKey?: string;
   hasOpenRouterKey: boolean;
   hasGeminiKey: boolean;
   autoValidateOnFix: boolean;

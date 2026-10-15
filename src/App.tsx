@@ -299,6 +299,7 @@ export default function App() {
         provider: settings.aiProvider,
         model: settings.openRouterModel,
         openRouterKey: settings.openRouterKey,
+        geminiKey: settings.geminiKey,
         testCases,
       });
 
@@ -449,7 +450,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-100 font-sans text-slate-800 antialiased">
+    <div className="flex h-screen w-full overflow-hidden bg-slate-100 font-sans text-slate-800 antialiased">
       {/* Toast Notification */}
       {notification && (
         <div
@@ -488,13 +489,19 @@ export default function App() {
 
       {/* Main View: Home Page or Debugger Workspace */}
       {currentView === 'home' ? (
-        <HomePage
-          user={user}
-          onOpenWorkspace={() => setCurrentView('workspace')}
-          onOpenAuth={handleOpenAuth}
-          onSignOut={handleSignOut}
-          onOpenLanguages={() => setIsLanguagesOpen(true)}
-        />
+        <div className="w-full h-full flex-1 flex flex-col overflow-hidden">
+          <HomePage
+            user={user}
+            onOpenWorkspace={() => setCurrentView('workspace')}
+            onOpenAuth={handleOpenAuth}
+            onSignOut={handleSignOut}
+            onOpenLanguages={() => setIsLanguagesOpen(true)}
+            onSelectSample={(sample) => {
+              handleSelectSample(sample);
+              setCurrentView('workspace');
+            }}
+          />
+        </div>
       ) : (
         <>
           {/* Navigation Sidebar */}

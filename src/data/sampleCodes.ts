@@ -1,4 +1,4 @@
-import { SupportedLanguage, TestCase } from '../types/debugger';
+import type { SupportedLanguage, TestCase } from '../types/debugger.ts';
 
 export interface SampleSnippet {
   id: string;

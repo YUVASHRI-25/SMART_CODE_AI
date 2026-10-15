@@ -106,6 +106,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
+          {/* Gemini API Key */}
+          {formData.aiProvider === 'gemini' && (
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Gemini API Key (Optional override if not set in environment)
+              </label>
+              <input
+                type="password"
+                value={formData.geminiKey || ''}
+                onChange={(e) => setFormData({ ...formData, geminiKey: e.target.value })}
+                placeholder="AIzaSy..."
+                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded font-mono text-xs focus:ring-1 focus:ring-blue-500"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Leave empty to use GEMINI_API_KEY from environment, or enter a personal key when deployed.
+              </p>
+            </div>
+          )}
+
           {/* OpenRouter API Key */}
           {formData.aiProvider === 'openrouter' && (
             <div>

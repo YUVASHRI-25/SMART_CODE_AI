@@ -1,8 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import { HistorySession } from '../src/types/debugger';
+import type { HistorySession } from '../src/types/debugger.ts';
 
-const DATA_DIR = path.resolve(process.cwd(), '.data');
+const DATA_DIR = process.env.VERCEL
+  ? path.resolve('/tmp', '.data')
+  : path.resolve(process.cwd(), '.data');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 
 class HistoryStore {

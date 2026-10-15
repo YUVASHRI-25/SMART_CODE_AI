@@ -1,4 +1,4 @@
-import { SupportedLanguage, TestCase } from '../src/types/debugger';
+import type { SupportedLanguage, TestCase } from '../src/types/debugger.ts';
 
 export interface PromptInput {
   code: string;

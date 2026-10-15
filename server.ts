@@ -1,13 +1,14 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
-import { buildSystemInstruction, buildDebugPrompt } from './server/promptTemplate.js';
-import { validateTestCases, validateSyntax } from './server/validator.js';
-import { historyStore } from './server/historyStore.js';
-import { DebugRequest, DebugResponse, HistorySession, SupportedLanguage } from './src/types/debugger.js';
-import { SAMPLE_CODES } from './src/data/sampleCodes.js';
+import { buildSystemInstruction, buildDebugPrompt } from './server/promptTemplate.ts';
+import { validateTestCases, validateSyntax } from './server/validator.ts';
+import { historyStore } from './server/historyStore.ts';
+import type { DebugRequest, DebugResponse, HistorySession, SupportedLanguage } from './src/types/debugger.ts';
+import { SAMPLE_CODES } from './src/data/sampleCodes.ts';
 
 dotenv.config();
 
@@ -143,8 +144,25 @@ app.post('/api/debug', async (req: Request, res: Response) => {
       (req.headers['x-openrouter-key'] as string) ||
       process.env.OPENROUTER_API_KEY;
 
+    const geminiApiKey =
+      (req.body as any).geminiKey ||
+      (req.headers['x-gemini-key'] as string) ||
+      process.env.GEMINI_API_KEY;
+
     const hasOpenRouterKey = Boolean(openRouterApiKey && openRouterApiKey !== 'your_api_key_here');
-    const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY');
+    const hasGeminiKey = Boolean(geminiApiKey && geminiApiKey !== 'MY_GEMINI_API_KEY');
+
+    let activeGemini = geminiClient;
+    if (geminiApiKey && (!activeGemini || (req.body as any).geminiKey || req.headers['x-gemini-key'])) {
+      activeGemini = new GoogleGenAI({
+        apiKey: geminiApiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+    }
 
     const preferOpenRouter = requestedProvider === 'openrouter' || (!requestedProvider && hasOpenRouterKey);
 
@@ -195,13 +213,13 @@ app.post('/api/debug', async (req: Request, res: Response) => {
     }
 
     // Call Gemini if OpenRouter was not used or failed
-    if (!rawAiResponse && geminiClient && hasGeminiKey) {
+    if (!rawAiResponse && activeGemini && hasGeminiKey) {
       const geminiCandidateModels = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
       let lastGeminiErr: any = null;
 
       const callGeminiWithTimeout = async (modelName: string, timeoutMs = 25000) => {
         return Promise.race([
-          geminiClient!.models.generateContent({
+          activeGemini!.models.generateContent({
             model: modelName,
             contents: userPrompt,
             config: {
@@ -407,7 +425,11 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('[Server] Fatal startup error:', err);
-  process.exit(1);
-});
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('[Server] Fatal startup error:', err);
+    process.exit(1);
+  });
+}
+
+export default app;
